@@ -6,7 +6,32 @@ It also supports nested key paths for updates.
 
 import os
 import pickle
+from copy import deepcopy
 from os import path
+
+DEFAULT_DATA = {
+    'browser': 'edge',
+    'argdict': {
+        'ca': '',
+        'classname': '',
+        'path': '',
+        'video_resolution': '720p',
+        'sl': 'en'
+    }
+}
+
+
+def _merge_defaults(data, defaults):
+    for key, value in defaults.items():
+        if isinstance(value, dict):
+            existing = data.get(key, {})
+            if not isinstance(existing, dict):
+                existing = {}
+            data[key] = _merge_defaults(existing, value)
+        else:
+            data.setdefault(key, value)
+    return data
+
 
 class SimpleDB:
     def __init__(self, filename='data.bin'):
@@ -16,19 +41,20 @@ class SimpleDB:
     def _load(self):
         """Load data from the file, or initialize an empty dict if file doesn't exist."""
         if not os.path.exists(self.filename):
-            # create a database with default values
-            self._save({
-                'browser': 'edge',
-                'argdict':{
-                    'ca': '',
-                    'classname': '',
-                    'path': '',
-                    'video_resolution': '720p',
-                    'sl': 'en'
-                }
-            })
-        with open(self.filename, 'rb') as f:
-            return pickle.load(f)
+            self._save(deepcopy(DEFAULT_DATA))
+
+        try:
+            with open(self.filename, 'rb') as f:
+                data = pickle.load(f)
+        except (EOFError, OSError, pickle.PickleError):
+            data = {}
+
+        if not isinstance(data, dict):
+            data = {}
+
+        data = _merge_defaults(data, deepcopy(DEFAULT_DATA))
+        self._save(data)
+        return data
 
     def _save(self, data):
         """Save current data to file."""
@@ -64,6 +90,20 @@ class SimpleDB:
         if final_key not in data_ref:
             raise KeyError(f"Key '{final_key}' not found in path '{'.'.join(key_path)}'.")
         data_ref[final_key] = value
+        self._save(self._data)
+
+    def upsert(self, key_path, value):
+        """Create or update a top-level or nested key path."""
+        if isinstance(key_path, str):
+            key_path = key_path.split('.')
+
+        data_ref = self._data
+        for key in key_path[:-1]:
+            data_ref = data_ref.setdefault(key, {})
+            if not isinstance(data_ref, dict):
+                raise KeyError(f"Path '{'.'.join(key_path)}' is invalid.")
+
+        data_ref[key_path[-1]] = value
         self._save(self._data)
 
 

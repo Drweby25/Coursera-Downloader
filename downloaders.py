@@ -18,6 +18,31 @@ import time
 
 import requests
 
+_cancel_event = None
+_pause_event = None
+
+
+class DownloadCancelled(BaseException):
+    pass
+
+
+def set_download_control_events(cancel_event=None, pause_event=None):
+    global _cancel_event, _pause_event
+    _cancel_event = cancel_event
+    _pause_event = pause_event
+
+
+def raise_if_cancelled():
+    if _cancel_event is not None and _cancel_event.is_set():
+        raise DownloadCancelled("Download cancelled.")
+
+
+def wait_if_paused():
+    while _pause_event is not None and _pause_event.is_set():
+        raise_if_cancelled()
+        time.sleep(0.2)
+
+
 #
 # Below are file downloaders, they are wrappers for external downloaders.
 #
@@ -49,7 +74,11 @@ class Downloader(object):
         """
 
         try:
-            self._start_download(url, filename, resume)
+            raise_if_cancelled()
+            wait_if_paused()
+            result = self._start_download(url, filename, resume)
+            raise_if_cancelled()
+            return result
         except KeyboardInterrupt as e:
             # keep the file if resume is True
             if not resume:
@@ -142,7 +171,7 @@ class ExternalDownloader(Downloader):
 
         logging.debug('Executing %s: %s', self.bin, command)
         try:
-            subprocess.call(command)
+            return subprocess.call(command) == 0
         except OSError as e:
             msg = "{0}. Are you sure that '{1}' is the right bin?".format(
                 e, self.bin)
@@ -338,6 +367,8 @@ class NativeDownloader(Downloader):
         attempts_count = 0
         error_msg = ''
         while attempts_count < max_attempts:
+            raise_if_cancelled()
+            wait_if_paused()
             r = self.session.get(url, stream=True, headers=headers)
 
             if r.status_code != 200:
@@ -381,15 +412,19 @@ class NativeDownloader(Downloader):
             progress = DownloadProgress(content_length)
             progress.start()
             f = open(filename, 'ab') if resume else open(filename, 'wb')
-            while True:
-                data = r.raw.read(chunk_sz, decode_content=True)
-                if not data:
-                    progress.stop()
-                    break
-                progress.report(r.raw.tell())
-                f.write(data)
-            f.close()
-            r.close()
+            try:
+                while True:
+                    raise_if_cancelled()
+                    wait_if_paused()
+                    data = r.raw.read(chunk_sz, decode_content=True)
+                    if not data:
+                        progress.stop()
+                        break
+                    progress.report(r.raw.tell())
+                    f.write(data)
+            finally:
+                f.close()
+                r.close()
             return True
 
         if attempts_count == max_attempts:

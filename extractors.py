@@ -119,13 +119,30 @@ class CourseraExtractor(PlatformExtractor):
             dom['linked']['onDemandCourseMaterialLessons.v1'])
         all_items = ItemsV2.from_json(
             dom['linked']['onDemandCourseMaterialItems.v2'])
+        site_tree = {
+            'course_slug': course_name,
+            'course_id': class_id,
+            'modules': [],
+        }
 
         for module in all_modules:
             logging.info('Processing module  %s', module.slug)
             lessons = []
+            site_module = {
+                'title': module.name,
+                'slug': module.slug,
+                'id': module.id,
+                'sections': [],
+            }
             for section in module.children(all_lessons):
                 logging.info('Processing section     %s', section.slug)
                 lectures = []
+                site_section = {
+                    'title': section.name,
+                    'slug': section.slug,
+                    'id': section.id,
+                    'items': [],
+                }
                 available_lectures = section.children(all_items)
 
                 # Certain modules may be empty-looking programming assignments
@@ -138,6 +155,7 @@ class CourseraExtractor(PlatformExtractor):
 
                 for lecture in available_lectures:
                     typename = lecture.type_name
+                    reason = ''
 
                     logging.info('Processing lecture         %s (%s)',
                                  lecture.slug, typename)
@@ -173,21 +191,34 @@ class CourseraExtractor(PlatformExtractor):
                         if download_quizzes:
                             links = course.extract_links_from_quiz(
                                 lecture.id)
+                        else:
+                            reason = 'Quiz extraction is disabled.'
                             
                     elif typename == 'staffGraded':
                         logging.info(
                             'Staff graded assignment skipped: "%s" in lecture "%s" (lecture id "%s")',
                             lecture.slug, lecture.slug, lecture.id)
+                        reason = 'Staff-graded assignments are interactive Coursera submission items and do not expose a downloadable file URL.'
+
+                    elif typename in ('ungradedAssignment', 'discussionPrompt'):
+                        reason = 'This is an interactive Coursera activity. It can be completed in the browser, but Coursera does not expose it as a downloadable file.'
+
+                    elif typename in ('ungradedWidget', 'coach'):
+                        reason = 'This is an embedded Coursera plugin/lab item. It runs in the browser and does not expose a downloadable file URL.'
 
                     elif typename == 'exam':
                         if download_quizzes:
                             links = course.extract_links_from_exam(
                                 lecture.id)
+                        else:
+                            reason = 'Exam extraction is disabled.'
 
                     elif typename == 'programming':
                         if download_quizzes:
                             links = course.extract_links_from_programming_immediate_instructions(
                                 lecture.id)
+                        else:
+                            reason = 'Programming assignment extraction is disabled.'
 
                     elif typename == 'notebook':
                         if download_notebooks and not self._notebook_downloaded:
@@ -196,23 +227,35 @@ class CourseraExtractor(PlatformExtractor):
                             links = course.extract_links_from_notebook(
                                 lecture.id)
                             self._notebook_downloaded = True
+                        else:
+                            reason = 'Notebook extraction is disabled or this course notebook was already handled.'
 
                     else:
                         logging.info(
                             'Unsupported typename "%s" in lecture "%s" (lecture id "%s")',
                             typename, lecture.slug, lecture.id)
-                        continue
+                        reason = 'This Coursera item type is not supported by the downloader yet.'
 
                     if links is None:
                         error_occurred = True
-                    elif links:
+                        links = {}
+                        reason = 'The downloader tried to extract this item, but Coursera returned an error. Check the console log for details.'
+                    elif not links:
+                        reason = reason or 'Coursera listed this item, but no downloadable file links were found.'
+
+                    site_section['items'].append(
+                        self._site_tree_item(lecture, typename, links, reason))
+
+                    if links:
                         lectures.append((lecture.slug, links))
 
                 if lectures:
                     lessons.append((section.slug, lectures))
+                site_module['sections'].append(site_section)
 
             if lessons:
                 modules.append((module.slug, lessons))
+            site_tree['modules'].append(site_module)
 
         if modules and reverse:
             modules.reverse()
@@ -222,6 +265,12 @@ class CourseraExtractor(PlatformExtractor):
         references = []
         if json_references:
             logging.info('Processing resources')
+            site_resource_module = {
+                'title': 'Resources',
+                'slug': 'Resources',
+                'id': '',
+                'sections': [],
+            }
             for json_reference in json_references:
                 reference = []
                 reference_slug = json_reference['slug']
@@ -232,13 +281,53 @@ class CourseraExtractor(PlatformExtractor):
                     json_reference['shortId'])
                 if links is None:
                     error_occurred = True
+                    links = {}
                 elif links:
                     reference.append(('', links))
+
+                site_resource_module['sections'].append({
+                    'title': reference_slug,
+                    'slug': reference_slug,
+                    'id': json_reference.get('id', '') or json_reference.get('shortId', ''),
+                    'items': [{
+                        'title': reference_slug,
+                        'slug': reference_slug,
+                        'id': json_reference.get('shortId', ''),
+                        'type': 'resource',
+                        'downloadable': bool(links),
+                        'download_formats': sorted(links.keys()) if links else [],
+                        'download_file_count': count_links(links),
+                        'reason': '' if links else 'Resource item did not expose downloadable links.',
+                    }],
+                })
 
                 if reference:
                     references.append((reference_slug, reference))
 
         if references:
             modules.append(("Resources", references))
+        if json_references:
+            site_tree['modules'].append(site_resource_module)
+
+        spit_json(site_tree, '%s-site-tree.json' % course_name)
+        logging.info('Saved full Coursera site tree: %s-site-tree.json', course_name)
 
         return error_occurred, modules
+
+    def _site_tree_item(self, lecture, typename, links, reason):
+        return {
+            'title': lecture.name,
+            'slug': lecture.slug,
+            'id': lecture.id,
+            'type': typename,
+            'downloadable': bool(links),
+            'download_formats': sorted(links.keys()) if links else [],
+            'download_file_count': count_links(links),
+            'reason': '' if links else reason,
+        }
+
+
+def count_links(links):
+    if not isinstance(links, dict):
+        return 0
+    return sum(len(items) for items in links.values() if isinstance(items, list))

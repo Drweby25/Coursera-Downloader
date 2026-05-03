@@ -1,5 +1,3 @@
-__version__ = "3.0.1"
-
 import sys, requests
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton, QRadioButton,
@@ -12,6 +10,7 @@ from PyQt5.QtCore import pyqtSignal
 from utils import process_notification_html
 import general
 from coursera_dl import main_f
+from app_version import __version__
 
 import livedb
 from threading import Thread
@@ -240,7 +239,7 @@ class MainWindow(QMainWindow):
 
         elif clicked == dont_show_again_btn:
             # Save preference to local database
-            self.localdb.create('show_update_prompt', 'false')
+            self.localdb.upsert('show_update_prompt', 'false')
         
         # TODO: add do not show again checkbox
         # TODO: maybe close the app when update button is clicked

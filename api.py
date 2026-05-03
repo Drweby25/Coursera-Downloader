@@ -520,9 +520,14 @@ class VideosV1(object):
     @staticmethod
     def from_json(data):
 
-        videos = [VideoV1(resolution, links['mp4VideoUrl'])
-                  for resolution, links
-                  in data['sources']['byResolution'].items()]
+        videos = []
+        for resolution, links in data.get('sources', {}).get('byResolution', {}).items():
+            mp4_video_url = links.get('mp4VideoUrl') if isinstance(links, dict) else None
+            if not mp4_video_url:
+                logging.info('Skipping %s video source because mp4VideoUrl is missing.',
+                             resolution)
+                continue
+            videos.append(VideoV1(resolution, mp4_video_url))
         videos.sort(key=lambda video: video.resolution, reverse=True)
 
         videos = OrderedDict(

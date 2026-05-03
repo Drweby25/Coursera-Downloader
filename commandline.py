@@ -12,6 +12,7 @@ __courseradlversion__ = '0.12.0b0'
 # from maingui import __version__
 
 from credentials import get_credentials, CredentialsError
+from general import parse_course_input
 
 LOCAL_CONF_FILE_NAME = 'coursera-dl.conf'
 
@@ -135,6 +136,14 @@ def parse_args(args=None):
         'download its courses, if available. Note that there are name '
         'clashes, e.g. "machine-learning" is both a course and a '
         'specialization (Default: False)')
+
+    group_material.add_argument(
+        '--number-course-folders',
+        dest='number_course_folders',
+        action='store_true',
+        default=False,
+        help='prefix multi-course download folders with their course order '
+        '(for example 01_course-slug). (Default: False)')
 
     group_material.add_argument(
         '--only-syllabus',
@@ -429,6 +438,13 @@ def parse_args(args=None):
         help='cache course syllabus into a file')
 
     group_debug.add_argument(
+        '--refresh-syllabus',
+        dest='refresh_syllabus',
+        action='store_true',
+        default=False,
+        help='fetch course syllabus from Coursera even when a parsed cache file exists')
+
+    group_debug.add_argument(
         '--version',
         dest='version',
         action='store_true',
@@ -464,6 +480,16 @@ def parse_args(args=None):
         # logging.error('>> PLEASE FILL IN ALL INFO\n')
         print(">> PLEASE FILL IN ALL INFO\n")
         sys.exit(1)
+
+    parsed_class_names = []
+    for class_name in args.class_names:
+        parsed_class_name, is_multi_course_program = parse_course_input(class_name)
+        if parsed_class_name:
+            parsed_class_names.append(parsed_class_name)
+            args.specialization = args.specialization or is_multi_course_program
+        else:
+            parsed_class_names.append(class_name)
+    args.class_names = parsed_class_names
 
     # show version?
     if args.version:

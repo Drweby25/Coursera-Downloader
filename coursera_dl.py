@@ -46,10 +46,9 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 import shutil
-
-from distutils.version import LooseVersion as V
 
 
 # Test versions of some critical modules.
@@ -61,7 +60,7 @@ from cookies import (
     AuthenticationFailed, ClassNotFound,
     get_cookies_for_class, make_cookie_values, TLSAdapter, login)
 from define import (CLASS_URL, ABOUT_URL, PATH_CACHE)
-from downloaders import get_downloader
+from downloaders import get_downloader, raise_if_cancelled, wait_if_paused
 from workflow import CourseraDownloader
 from parallel import ConsecutiveDownloader, ParallelDownloader
 from utils import (clean_filename, get_anchor_format, mkdir_p, fix_url,
@@ -78,8 +77,13 @@ from extractors import CourseraExtractor
 # URL containing information about outdated modules
 _SEE_URL = " See https://github.com/coursera-dl/coursera/issues/139"
 
-assert V(requests.__version__) >= V('2.4'), "Upgrade requests!" + _SEE_URL
-assert V(bs4.__version__) >= V('4.1'), "Upgrade bs4!" + _SEE_URL
+
+def _version_tuple(version):
+    return tuple(int(part) for part in re.findall(r'\d+', version)[:3])
+
+
+assert _version_tuple(requests.__version__) >= (2, 4), "Upgrade requests!" + _SEE_URL
+assert _version_tuple(bs4.__version__) >= (4, 1), "Upgrade bs4!" + _SEE_URL
 
 
 def get_session():
@@ -99,34 +103,24 @@ def create_session(args):
         session.cookies.set('CAUTH', args.cookies_cauth)
     elif args.browser:
         def autocookie(browser):
-            import browser_cookie3
-            if browser == 'chrome':
-                cj = browser_cookie3.chrome(domain_name='coursera.org')
-            elif browser == 'chromium':
-                cj = browser_cookie3.chromium(domain_name='coursera.org')
-            elif browser == 'opera':
-                cj = browser_cookie3.opera(domain_name='coursera.org')
-            elif browser == 'opera_gx':
-                cj = browser_cookie3.opera_gx(domain_name='coursera.org')
-            elif browser == 'brave':
-                cj = browser_cookie3.brave(domain_name='coursera.org')
-            elif browser == 'edge':
-                cj = browser_cookie3.edge(domain_name='coursera.org')
-            elif browser == 'vivaldi':
-                cj = browser_cookie3.vivaldi(domain_name='coursera.org')
-            elif browser == 'firefox':
-                cj = browser_cookie3.firefox(domain_name='coursera.org')
-            elif browser == 'librewolf':
-                cj = browser_cookie3.librewolf(domain_name='coursera.org')
-            elif browser == 'safari':
-                cj = browser_cookie3.safari(domain_name='coursera.org')
-            else:
+            try:
+                import rookiepy
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "Missing dependency: rookiepy. Install dependencies with "
+                    "python -m pip install -r requirements.txt, then retry."
+                ) from exc
+
+            cookie_loader = getattr(rookiepy, browser, None)
+            if cookie_loader is None:
                 raise RuntimeError(f'Invalid browser {args.browser}')
-            for cookie in cj:
-                if cookie.name == 'CAUTH':
-                    return cookie.value
+
+            for cookie in cookie_loader(['coursera.org']):
+                name = cookie.get('name') if isinstance(cookie, dict) else getattr(cookie, 'name', None)
+                if name == 'CAUTH':
+                    return cookie.get('value') if isinstance(cookie, dict) else getattr(cookie, 'value', None)
             else:
-                raise Exception('Can not find CAUTH in {args.browser}')
+                raise RuntimeError(f'Can not find CAUTH in {args.browser}')
         cauth_cookie = autocookie(args.browser)
         logging.debug(
             f'Got CAUTH cookie from {args.browser}: "{cauth_cookie}"')
@@ -166,7 +160,7 @@ def download_on_demand_class(session, args, class_name):
     extractor = CourseraExtractor(session)
 
     cached_syllabus_filename = '%s-syllabus-parsed.json' % class_name
-    if args.cache_syllabus and os.path.isfile(cached_syllabus_filename):
+    if args.cache_syllabus and not args.refresh_syllabus and os.path.isfile(cached_syllabus_filename):
         modules = slurp_json(cached_syllabus_filename)
     else:
         error_occurred, modules = extractor.get_modules(
@@ -180,8 +174,21 @@ def download_on_demand_class(session, args, class_name):
             args.download_notebooks
         )
 
-    if is_debug_run or args.cache_syllabus():
+    if is_debug_run() or args.cache_syllabus:
         spit_json(modules, cached_syllabus_filename)
+        site_tree_filename = '%s-site-tree.json' % class_name
+        if os.path.isfile(site_tree_filename) and args.path:
+            try:
+                mkdir_p(args.path)
+                shutil.copyfile(
+                    site_tree_filename,
+                    os.path.join(args.path, site_tree_filename))
+                logging.info('Copied site tree manifest to %s',
+                             os.path.join(args.path, site_tree_filename))
+            except OSError as exc:
+                logging.warning('Could not copy site tree manifest to download path: %s', exc)
+        elif not os.path.isfile(site_tree_filename):
+            logging.warning('Site tree manifest was not created: %s', site_tree_filename)
 
     if args.only_syllabus:
         return error_occurred, False
@@ -252,6 +259,30 @@ def download_class(session, args, class_name):
     return download_on_demand_class(session, args, class_name)
 
 
+def cache_course_syllabi(session, args):
+    if not args.cache_syllabus or args.only_syllabus:
+        return []
+
+    classes_with_errors = []
+    original_only_syllabus = args.only_syllabus
+    args.only_syllabus = True
+    try:
+        logging.info('Collecting course data before downloading files...')
+        for class_index, class_name in enumerate(args.class_names):
+            raise_if_cancelled()
+            wait_if_paused()
+            logging.info('Collecting course data: %s (%d / %d)',
+                         class_name, class_index + 1, len(args.class_names))
+            error_occurred, _ = download_class(session, args, class_name)
+            if error_occurred:
+                classes_with_errors.append(class_name)
+        logging.info('Course data collection finished.')
+    finally:
+        args.only_syllabus = original_only_syllabus
+
+    return classes_with_errors
+
+
 def main_f(cmd):
     """
     Main entry point for execution as a program (instead of as a module).
@@ -277,7 +308,11 @@ def main_f(cmd):
     if args.specialization:
         args.class_names = expand_specializations(session, args.class_names)
 
+    classes_with_errors.extend(cache_course_syllabi(session, args))
+
     for class_index, class_name in enumerate(args.class_names):
+        raise_if_cancelled()
+        wait_if_paused()
         try:
             logging.info('Downloading class: %s (%d / %d)',
                          class_name, class_index + 1, len(args.class_names))
@@ -313,7 +348,10 @@ def main_f(cmd):
             logging.info('Sleeping for %d seconds before downloading next course. '
                          'You can change this with --download-delay option.',
                          args.download_delay)
-            time.sleep(args.download_delay)
+            for _ in range(args.download_delay):
+                raise_if_cancelled()
+                wait_if_paused()
+                time.sleep(1)
 
     if completed_classes:
         logging.info('-' * 80)
@@ -329,3 +367,7 @@ def main_f(cmd):
         for class_name in classes_with_errors:
             logging.info('%s (https://www.coursera.org/learn/%s)',
                          class_name, class_name)
+
+
+if __name__ == '__main__':
+    main_f(sys.argv[1:])

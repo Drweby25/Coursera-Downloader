@@ -8,11 +8,20 @@ import subprocess
 
 import requests
 
+from downloaders import raise_if_cancelled, wait_if_paused
 from formatting import format_section, get_lecture_filename
 from playlist import create_m3u_playlist
 from utils import is_course_complete, mkdir_p, normalize_path
 from filtering import find_resources_to_get, skip_format_url
 from define import IN_MEMORY_MARKER
+
+
+def course_folder_name(class_name, args):
+    if getattr(args, 'number_course_folders', False):
+        class_names = list(getattr(args, 'class_names', []) or [])
+        if len(class_names) > 1 and class_name in class_names:
+            return '%02d_%s' % (class_names.index(class_name) + 1, class_name)
+    return class_name
 
 
 def _iter_modules(modules, class_name, path, ignored_formats, args):
@@ -26,6 +35,7 @@ def _iter_modules(modules, class_name, path, ignored_formats, args):
     section_filter = args.section_filter
     verbose_dirs = args.verbose_dirs
     combined_section_lectures_nums = args.combined_section_lectures_nums
+    class_folder = course_folder_name(class_name, args)
 
     class IterModule(object):
         def __init__(self, index, module):
@@ -49,7 +59,7 @@ def _iter_modules(modules, class_name, path, ignored_formats, args):
             self.index = secnum
             self.name = '%02d_%s' % (secnum, section)
             self.dir = os.path.join(
-                path, class_name, module_iter.name,
+                path, class_folder, module_iter.name,
                 format_section(secnum + 1, section,
                                class_name, verbose_dirs))
             self._lectures = lectures
@@ -151,13 +161,21 @@ class CourseraDownloader(CourseDownloader):
             self._ignored_formats, self._args)
 
         for module in modules:
+            raise_if_cancelled()
+            wait_if_paused()
             last_update = -1
             for section in module.sections:
+                raise_if_cancelled()
+                wait_if_paused()
                 if not os.path.exists(section.dir):
                     mkdir_p(normalize_path(section.dir))
 
                 for lecture in section.lectures:
+                    raise_if_cancelled()
+                    wait_if_paused()
                     for resource in lecture.resources:
+                        raise_if_cancelled()
+                        wait_if_paused()
                         lecture_filename = normalize_path(
                             lecture.filename(resource.fmt, resource.title))
                         last_update = self._handle_resource(
@@ -220,8 +238,23 @@ class CourseraDownloader(CourseDownloader):
         resume = self._args.resume
         skip_download = self._args.skip_download
 
+        file_exists = os.path.exists(lecture_filename)
+        file_is_empty = file_exists and os.path.getsize(lecture_filename) == 0
+        partial_marker = lecture_filename + '.partial'
+        has_partial_marker = os.path.exists(partial_marker)
+
+        # Resume should preserve restored files and continue with missing work.
+        # Empty placeholders and marked partial files are retried because they
+        # do not represent usable content.
+        should_download = (
+            overwrite or
+            not file_exists or
+            file_is_empty or
+            (resume and has_partial_marker)
+        )
+
         # Decide whether we need to download it
-        if overwrite or not os.path.exists(lecture_filename) or resume:
+        if should_download:
             if not skip_download:
                 if url.startswith(IN_MEMORY_MARKER):
                     page_content = url[len(IN_MEMORY_MARKER):]
@@ -234,8 +267,16 @@ class CourseraDownloader(CourseDownloader):
                         self.skipped_urls.append(url)
                     else:
                         logging.info('Downloading: %s', lecture_filename)
-                        self._downloader.download(
-                            callback, url, lecture_filename, resume=resume)
+                        with open(partial_marker, 'w'):
+                            pass
+                        try:
+                            downloaded = self._downloader.download(
+                                callback, url, lecture_filename, resume=resume)
+                        except BaseException:
+                            raise
+                        else:
+                            if downloaded is not False and os.path.exists(partial_marker):
+                                os.remove(partial_marker)
             else:
                 open(lecture_filename, 'w').close()  # touch
             last_update = time.time()

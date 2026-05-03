@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Coursera Downloader</title>
+    <link rel="stylesheet" href="/styles.css?v=20260503-precollect-syllabus">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace control-panel">
+        <header class="topbar">
+          <div class="title-row">
+            <h1>Coursera Downloader</h1>
+            <p id="version">Preparing app...</p>
+            <div class="status-pill" id="jobState">Idle</div>
+          </div>
+          <div class="header-actions">
+            <button type="button" class="secondary" id="loginCheckBtn">Login</button>
+            <button type="button" class="secondary settings-toggle" id="settingsToggleBtn" aria-label="Settings" title="Settings"></button>
+          </div>
+        </header>
+
+        <form id="downloadForm" class="download-form">
+          <div class="field full">
+            <label class="visually-hidden" for="course">Course, specialization, or certificate URL</label>
+            <div class="course-row">
+              <div class="course-input-wrap">
+                <input id="course" name="course" type="text" autocomplete="off" placeholder="Course, specialization, or certificate URL">
+                <button type="button" id="courseClearBtn" class="course-clear" aria-label="Clear" title="Clear" hidden>×</button>
+                <ul id="courseHistory" class="course-history" hidden></ul>
+              </div>
+              <button type="submit" id="downloadBtn">Download</button>
+              <button type="button" class="secondary" id="pauseBtn" hidden>Pause</button>
+              <button type="button" class="secondary danger" id="cancelBtn" hidden>Cancel</button>
+            </div>
+          </div>
+
+          <section id="settingsPanel" class="settings-panel" hidden>
+            <div class="settings-content">
+              <div class="field full">
+                <label for="path">Download folder</label>
+                <div class="path-row">
+                  <input id="path" name="path" type="text" autocomplete="off" placeholder="C:\Users\amrsa\Downloads\Coursera">
+                  <button type="button" class="secondary" id="selectFolderBtn">Select</button>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label for="video_resolution">Video resolution</label>
+                  <div class="segmented" role="radiogroup" aria-label="Video resolution">
+                    <label><input type="radio" name="video_resolution" value="720p">720p</label>
+                    <label><input type="radio" name="video_resolution" value="540p">540p</label>
+                    <label><input type="radio" name="video_resolution" value="360p">360p</label>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="subtitle_language">Subtitle language</label>
+                  <select id="subtitle_language" name="subtitle_language"></select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </form>
+
+        <section class="message" id="message" hidden></section>
+      </section>
+
+      <section class="activity">
+        <button type="button" class="icon-button visually-hidden" id="refreshBtn" title="Refresh status">Refresh</button>
+        <section id="recentCourses" class="recent-courses" hidden>
+          <h3>Recent courses</h3>
+          <div id="recentCoursesGrid" class="recent-courses-grid"></div>
+          <p id="recentCoursesEmpty" class="recent-courses-empty" hidden>No courses yet. Paste a Coursera URL above to begin.</p>
+        </section>
+        <div class="activity-body" id="activityBody" hidden>
+          <div class="tree-panel">
+            <div class="tree-toolbar">
+              <button type="button" class="secondary small" id="expandTreeBtn">Expand all</button>
+              <button type="button" class="secondary small" id="collapseTreeBtn">Collapse all</button>
+            </div>
+            <aside class="activity-tree" id="activityTree"></aside>
+          </div>
+          <div id="logs" class="activity-log"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js?v=20260503-no-fallback-tree"></script>
+  </body>
+</html>
