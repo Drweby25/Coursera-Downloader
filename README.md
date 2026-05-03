@@ -14,6 +14,8 @@ Below are example screenshots of the current web interface. Usernames and any se
 
 ![Course download progress view](screenshots/activity-tree-blurred.png)
 
+![Recent courses list](screenshots/recent-courses-blurred.png)
+
 # What's New (v4.0.0 - React Web App Transition)
 
 This version transitions from a desktop GUI application to a web-based app. Key changes and new features:
