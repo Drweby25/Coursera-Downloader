@@ -10,9 +10,9 @@ Download videos, assignments, notes, and all other resources of a course, organi
 
 Below are example screenshots of the current web interface. Usernames and any sensitive details are blurred for privacy.
 
-![Coursera Downloader dashboard](screenshots/dashboard.png)
+![Coursera Downloader dashboard](screenshots/dashboard-blurred.png)
 
-![Course download progress view](screenshots/download-tree.png)
+![Course download progress view](screenshots/activity-tree-blurred.png)
 
 # What's New (v4.0.0 - React Web App Transition)
 
