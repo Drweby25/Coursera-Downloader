@@ -9,7 +9,6 @@ import logging
 import configargparse as argparse
 
 __courseradlversion__ = '0.12.0b0'
-# from maingui import __version__
 
 from credentials import get_credentials, CredentialsError
 from general import parse_course_input

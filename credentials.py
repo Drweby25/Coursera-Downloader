@@ -4,7 +4,6 @@
 Manages the credential information (passwords, etc).
 """
 
-import getpass
 import logging
 import os
 import platform
@@ -38,6 +37,6 @@ def get_credentials(username=None, password=None):
             'or a CAUTH cookie with the --cauth option')
 
     if not password:
-        password = getpass.getpass('Coursera password for {0}: '.format(username))
+        raise CredentialsError('Please provide a password with the -p option')
 
     return username, password

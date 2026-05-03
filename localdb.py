@@ -119,9 +119,6 @@ class SimpleDB:
         """Return the full dictionary."""
         return dict(self._data)
 
-    def get_remote_config(self):
-        return self.read('api_key'), self.read('project_id')
-
 if __name__ == '__main__':
     db = SimpleDB()
 

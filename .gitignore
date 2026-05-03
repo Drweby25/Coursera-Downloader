@@ -5,7 +5,7 @@
 
 # ignore files
 notes.txt
-TODO.txt 
+TODO.txt
 draft.py
 draft2.py
 features.txt
@@ -13,6 +13,8 @@ features.txt
 manual_test.txt
 notification_img.*
 
+# user runtime state (contains cauth session cookie + local paths after first run)
+data.bin
 
 # ignore folder
 win64_build/
@@ -23,3 +25,20 @@ img/
 default_databin/
 dist/
 .venv/
+.claude/
+.idea/
+
+# IDE / OS junk
+*.swp
+.DS_Store
+Thumbs.db
+
+# Python build/cache
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# logs
+*.log

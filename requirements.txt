@@ -10,5 +10,4 @@ varname==0.15.0
 rookiepy==0.5.6
 pillow==11.0.0
 backoff==2.2.1
-PyQt5==5.15.11
 packaging==25.0
